@@ -425,7 +425,7 @@ internal static class ProgramEntry
                     throw new InvalidOperationException("Usage: transport scan-color <300|600> <output-ppm> [trace-json]");
                 }
 
-                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3)))
                 {
                     var capture = await WindowsScanSnapImageCapture.ScanToPpmAsync(
                             scanDpi,
