@@ -105,14 +105,16 @@ Current status:
 - live raw status/identity/sensor probes succeed against the attached x64-hosted S1100
 - the firmware upload code path runs without the Fujitsu x64 DLL when firmware is already loaded
 - the scan block acquisition and descrambling pipeline is implemented, but it still needs a live sheet-fed scan validation
-- USBPcap / Wireshark capture tools are not currently installed on this machine
+- USBPcap and Wireshark are installed, but USBPcap still needs a reboot before filter control is reliable
+- the scanner is now connected directly to the laptop root hub at `PCIROOT(0)#PCI(1400)#USBROOT(0)#USB(2)` / `HS02`
+- the first ARM64 milestone is the managed raw-scan CLI, not a packaged WIA/STI driver
 - a real Windows imaging driver layer (WIA/STI/COM packaging) is still pending
 
 Before handing the repo to an ARM64 test machine, the remaining gates are:
 
 1. Validate `transport scan-color` end to end with a sheet inserted.
-2. Install USBPcap / Wireshark and capture a working x64 Windows scan for protocol comparison.
-3. Decide whether the first ARM64 milestone is the managed raw-scan CLI or a formal Windows imaging driver.
+2. Reboot so USBPcap filter control is active, then capture a working vendor x64 Windows scan for protocol comparison.
+3. Compare that vendor capture against the managed raw trace and keep the managed raw-scan CLI as the first ARM64 handoff target.
 
 ## Next Milestones
 
