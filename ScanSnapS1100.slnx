@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ScanSnapS1100.Core/ScanSnapS1100.Core.csproj" />
+    <Project Path="src/ScanSnapS1100.Tool/ScanSnapS1100.Tool.csproj" />
+    <Project Path="src/ScanSnapS1100.Windows/ScanSnapS1100.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ScanSnapS1100.Core.Tests/ScanSnapS1100.Core.Tests.csproj" />
+  </Folder>
+</Solution>

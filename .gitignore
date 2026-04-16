@@ -1,0 +1,13 @@
+bin/
+obj/
+artifacts/
+.vs/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.pcap
+*.dat
+baseline/*
+!baseline/.gitkeep
+third_party/
