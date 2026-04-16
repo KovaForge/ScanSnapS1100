@@ -2,7 +2,9 @@ using System.Globalization;
 using System.Text;
 using ScanSnapS1100.Core.Firmware;
 using ScanSnapS1100.Core.Protocol;
+using ScanSnapS1100.Windows.Baseline;
 using ScanSnapS1100.Windows.DeviceDiscovery;
+using ScanSnapS1100.Windows.Transport;
 
 return await ProgramEntry.RunAsync(args).ConfigureAwait(false);
 
@@ -28,6 +30,10 @@ internal static class ProgramEntry
                     return Task.FromResult(HandleProfiles(args));
                 case "flags":
                     return Task.FromResult(HandleFlags(args));
+                case "transport":
+                    return HandleTransportAsync(args);
+                case "baseline":
+                    return HandleBaselineAsync(args);
                 case "help":
                 case "--help":
                 case "-h":
@@ -71,6 +77,7 @@ internal static class ProgramEntry
                     Console.WriteLine($"  Service:    {device.Service ?? "(unknown)"}");
                     Console.WriteLine($"  Driver:     {device.DriverVersion ?? "(unknown)"}");
                     Console.WriteLine($"  INF:        {device.InfName ?? "(unknown)"}");
+                    Console.WriteLine($"  Interfaces: {device.InterfacePaths.Length}");
                     Console.WriteLine($"  Status:     {device.Status ?? "(unknown)"}");
                 }
 
@@ -191,6 +198,10 @@ internal static class ProgramEntry
         Console.WriteLine("  profiles show <300|600>");
         Console.WriteLine("  flags status <hex-byte>");
         Console.WriteLine("  flags sensor <hex-dword>");
+        Console.WriteLine("  transport interfaces");
+        Console.WriteLine("  transport status");
+        Console.WriteLine("  transport probe");
+        Console.WriteLine("  baseline export [directory]");
     }
 
     private static byte ParseHexByte(string input)
@@ -247,6 +258,111 @@ internal static class ProgramEntry
         Console.WriteLine($"  INF:                {device.InfName ?? "(unknown)"}");
         PrintLabeledValues("Hardware IDs", device.HardwareIds);
         PrintLabeledValues("Compatible IDs", device.CompatibleIds);
+        PrintLabeledValues("Interfaces", device.InterfacePaths);
+    }
+
+    private static async Task<int> HandleTransportAsync(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            throw new InvalidOperationException("Usage: transport interfaces | transport status | transport probe");
+        }
+
+        var devices = WindowsScanSnapDiscovery.FindSupportedDevices();
+        if (devices.Count == 0)
+        {
+            Console.WriteLine("No supported ScanSnap S1100/S1100i devices found.");
+            return 0;
+        }
+
+        switch (args[1].ToLowerInvariant())
+        {
+            case "interfaces":
+                foreach (var device in devices)
+                {
+                    Console.WriteLine(device.Name);
+                    if (device.InterfacePaths.Length == 0)
+                    {
+                        Console.WriteLine("  (no image-class interface paths discovered)");
+                        continue;
+                    }
+
+                    foreach (var interfacePath in device.InterfacePaths)
+                    {
+                        Console.WriteLine($"  {interfacePath}");
+                    }
+                }
+
+                return 0;
+
+            case "status":
+                var scanner = devices.FirstOrDefault(static candidate => candidate.InterfacePaths.Length > 0);
+                if (scanner is null)
+                {
+                    throw new InvalidOperationException("No image-class interface path was discovered for the attached S1100/S1100i device.");
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                {
+                    await using var transport = WindowsUsbScannerTransport.Open(scanner.InterfacePaths[0]);
+                    var session = new S1100SessionEngine();
+                    var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
+
+                    Console.WriteLine($"Device:       {scanner.Name}");
+                    Console.WriteLine($"Interface:    {scanner.InterfacePaths[0]}");
+                    Console.WriteLine($"Raw status:   {status}");
+                    Console.WriteLine($"Usb powered:  {status.UsbPower}");
+                    Console.WriteLine($"Firmware:     {(status.FirmwareLoaded ? "loaded" : "not loaded")}");
+                }
+
+                return 0;
+
+            case "probe":
+                var probeScanner = devices.FirstOrDefault(static candidate => candidate.InterfacePaths.Length > 0);
+                if (probeScanner is null)
+                {
+                    throw new InvalidOperationException("No image-class interface path was discovered for the attached S1100/S1100i device.");
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                {
+                    await using var transport = WindowsUsbScannerTransport.Open(probeScanner.InterfacePaths[0]);
+                    var session = new S1100SessionEngine();
+                    var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
+                    var identifiers = await session.GetIdentifiersAsync(transport, timeout.Token).ConfigureAwait(false);
+                    var sensors = await session.GetSensorFlagsAsync(transport, timeout.Token).ConfigureAwait(false);
+
+                    Console.WriteLine($"Device:       {probeScanner.Name}");
+                    Console.WriteLine($"Interface:    {probeScanner.InterfacePaths[0]}");
+                    Console.WriteLine($"Status:       {status}");
+                    Console.WriteLine($"Identifiers:  {identifiers.Manufacturer} {identifiers.ProductName}".Trim());
+                    Console.WriteLine($"Sensors:      {sensors}");
+                }
+
+                return 0;
+
+            default:
+                throw new InvalidOperationException("Usage: transport interfaces | transport status | transport probe");
+        }
+    }
+
+    private static async Task<int> HandleBaselineAsync(string[] args)
+    {
+        if (args.Length < 2 || !args[1].Equals("export", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Usage: baseline export [directory]");
+        }
+
+        var exportDirectory = args.Length >= 3
+            ? Path.GetFullPath(args[2])
+            : GetDefaultBaselineExportDirectory();
+
+        var result = await BaselineExporter.ExportAsync(exportDirectory).ConfigureAwait(false);
+        Console.WriteLine($"Export root:  {result.ExportDirectory}");
+        Console.WriteLine($"Manifest:     {result.ManifestPath}");
+        Console.WriteLine($"Probe:        {(result.TransportProbeSucceeded ? "succeeded" : "failed")}");
+        Console.WriteLine($"Probe detail: {result.TransportProbeSummary ?? "(none)"}");
+        return 0;
     }
 
     private static void PrintLabeledValues(string label, string[] values)
@@ -268,5 +384,13 @@ internal static class ProgramEntry
         {
             Console.WriteLine($"    {value}");
         }
+    }
+
+    private static string GetDefaultBaselineExportDirectory()
+    {
+        return Path.GetFullPath(Path.Combine(
+            Environment.CurrentDirectory,
+            "baseline",
+            $"snapshot-{DateTime.UtcNow:yyyyMMdd-HHmmss}"));
     }
 }

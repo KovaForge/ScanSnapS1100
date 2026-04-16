@@ -11,6 +11,7 @@ public sealed record WindowsAttachedScanner(
     int? ConfigManagerErrorCode,
     string[] HardwareIds,
     string[] CompatibleIds,
+    string[] InterfacePaths,
     string? Service,
     string? DriverProviderName,
     DateTime? DriverDate,

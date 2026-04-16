@@ -29,8 +29,8 @@ public sealed class S1100SessionEngine
         var raw = await ReadExactAsync(transport, 0x20, cancellationToken).ConfigureAwait(false);
 
         var text = Encoding.ASCII.GetString(raw);
-        var manufacturer = text[..8].Trim();
-        var product = text[8..32].Trim();
+        var manufacturer = text[..8].Trim('\0', ' ');
+        var product = text[8..32].Trim('\0', ' ');
 
         return new S1100Identifiers(manufacturer, product);
     }

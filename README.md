@@ -9,6 +9,9 @@ The first implementation milestone is not a full imaging driver. It is a buildab
 - inspect Fujitsu `.nal` firmware containers
 - model the S1100 `epjitsu` command flow
 - discover locally attached S1100-class devices on Windows
+- enumerate the live `usbscan` image-class interface path
+- open the scanner over a raw Windows device handle and issue status/identity probes
+- export a reproducible x64 baseline snapshot from the working Windows machine
 - provide a CLI foundation for future raw USB transport and scan execution
 
 ## Repository Layout
@@ -35,6 +38,7 @@ List locally attached S1100 devices:
 
 ```powershell
 dotnet run --project .\src\ScanSnapS1100.Tool -- devices list
+dotnet run --project .\src\ScanSnapS1100.Tool -- devices inspect
 ```
 
 Inspect a Fujitsu firmware container:
@@ -50,10 +54,24 @@ dotnet run --project .\src\ScanSnapS1100.Tool -- profiles show 300
 dotnet run --project .\src\ScanSnapS1100.Tool -- profiles show 600
 ```
 
+List the Windows device interface path and issue a raw transport probe:
+
+```powershell
+dotnet run --project .\src\ScanSnapS1100.Tool -- transport interfaces
+dotnet run --project .\src\ScanSnapS1100.Tool -- transport status
+dotnet run --project .\src\ScanSnapS1100.Tool -- transport probe
+```
+
+Export the current x64 baseline snapshot:
+
+```powershell
+dotnet run --project .\src\ScanSnapS1100.Tool -- baseline export
+```
+
 ## Next Milestones
 
 1. Add USBPcap-driven protocol verification against the working Windows x64 stack.
-2. Implement raw transport against the scanner device path.
+2. Expand the raw transport from status/identity probes into firmware load and scan setup.
 3. Reproduce firmware load and status polling without the Fujitsu x64 DLL.
 4. Add scan block acquisition and image descrambling.
 5. Wrap the core in a Windows imaging integration layer for ARM64.

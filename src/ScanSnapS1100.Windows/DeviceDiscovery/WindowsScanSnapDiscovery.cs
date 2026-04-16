@@ -11,6 +11,7 @@ public static partial class WindowsScanSnapDiscovery
     public static IReadOnlyList<WindowsAttachedScanner> FindSupportedDevices()
     {
         var entitiesById = new Dictionary<string, WindowsAttachedScanner>(StringComparer.OrdinalIgnoreCase);
+        var interfacePathsById = WindowsScannerInterfaceEnumerator.EnumerateImageInterfacesByInstanceId();
 
         using var entitySearcher = new ManagementObjectSearcher(
             "SELECT Name, Manufacturer, PNPDeviceID, PNPClass, ClassGuid, ConfigManagerErrorCode, HardwareID, CompatibleID, Service, Status FROM Win32_PnPEntity");
@@ -44,6 +45,7 @@ public static partial class WindowsScanSnapDiscovery
                 ConfigManagerErrorCode: TryReadInt32(entity["ConfigManagerErrorCode"]),
                 HardwareIds: ReadStringArray(entity["HardwareID"]),
                 CompatibleIds: ReadStringArray(entity["CompatibleID"]),
+                InterfacePaths: interfacePathsById.TryGetValue(pnpDeviceId, out var interfacePaths) ? interfacePaths : [],
                 Service: entity["Service"]?.ToString(),
                 DriverProviderName: null,
                 DriverDate: null,
