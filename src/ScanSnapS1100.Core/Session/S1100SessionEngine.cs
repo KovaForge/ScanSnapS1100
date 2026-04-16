@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using ScanSnapS1100.Core.Firmware;
+using ScanSnapS1100.Core.Scanning;
 using ScanSnapS1100.Core.Transport;
 
 namespace ScanSnapS1100.Core.Protocol;
@@ -42,6 +43,15 @@ public sealed class S1100SessionEngine
         await WriteCommandAsync(transport, EpjitsuCommandCode.GetSensorFlags, cancellationToken).ConfigureAwait(false);
         var raw = await ReadExactAsync(transport, 4, cancellationToken).ConfigureAwait(false);
         return new EpjitsuSensorFlags(BinaryPrimitives.ReadUInt32LittleEndian(raw));
+    }
+
+    public async ValueTask<S1100ScanStatus> GetScanStatusAsync(
+        IScannerTransport transport,
+        CancellationToken cancellationToken = default)
+    {
+        await WriteCommandAsync(transport, EpjitsuCommandCode.GetScanStatus, cancellationToken).ConfigureAwait(false);
+        var raw = await ReadExactAsync(transport, 10, cancellationToken).ConfigureAwait(false);
+        return new S1100ScanStatus(raw);
     }
 
     public async ValueTask UploadFirmwareAsync(
@@ -116,7 +126,17 @@ public sealed class S1100SessionEngine
     {
         await ExpectAckAsync(transport, EpjitsuCommandCode.SetPaperFeed, cancellationToken).ConfigureAwait(false);
         await transport.WriteAsync(ingest ? PaperIngestPayload : PaperEjectPayload, cancellationToken).ConfigureAwait(false);
-        await ExpectSingleByteAsync(transport, Ack, cancellationToken).ConfigureAwait(false);
+        var raw = await ReadExactAsync(transport, 1, cancellationToken).ConfigureAwait(false);
+        switch (raw[0])
+        {
+            case Ack:
+                return;
+            case 0x15:
+            case 0x00:
+                throw new InvalidOperationException("The scanner did not detect a sheet in the feed path.");
+            default:
+                throw new IOException($"Unexpected scanner response byte 0x{raw[0]:X2}. Expected 0x{Ack:X2}.");
+        }
     }
 
     public async ValueTask StartScanAsync(
@@ -124,6 +144,13 @@ public sealed class S1100SessionEngine
         CancellationToken cancellationToken = default)
     {
         await ExpectAckAsync(transport, EpjitsuCommandCode.StartScan, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask RequestNextScanBlockAsync(
+        IScannerTransport transport,
+        CancellationToken cancellationToken = default)
+    {
+        await ExpectAckAsync(transport, EpjitsuCommandCode.ReadScanDataD3, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask ResetButtonAsync(

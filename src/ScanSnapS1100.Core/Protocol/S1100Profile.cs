@@ -2,6 +2,10 @@ namespace ScanSnapS1100.Core.Protocol;
 
 public sealed record S1100Profile(
     int Dpi,
+    int LineStride,
+    int PlaneStride,
+    int PlaneWidth,
+    int BlockHeight,
     byte[] CoarseCalibrationData,
     byte[] SetWindowCoarseCalibration,
     byte[] SetWindowFineCalibration,

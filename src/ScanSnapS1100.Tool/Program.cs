@@ -1,54 +1,62 @@
 using System.Globalization;
 using System.Text;
+using ScanSnapS1100.Core.Diagnostics;
 using ScanSnapS1100.Core.Firmware;
 using ScanSnapS1100.Core.Protocol;
+using ScanSnapS1100.Core.Scanning;
+using ScanSnapS1100.Core.Transport;
 using ScanSnapS1100.Windows.Baseline;
 using ScanSnapS1100.Windows.DeviceDiscovery;
+using ScanSnapS1100.Windows.Imaging;
+using ScanSnapS1100.Windows.ProtocolVerification;
 using ScanSnapS1100.Windows.Transport;
 
 return await ProgramEntry.RunAsync(args).ConfigureAwait(false);
 
 internal static class ProgramEntry
 {
-    public static Task<int> RunAsync(string[] args)
+    public static async Task<int> RunAsync(string[] args)
     {
         if (args.Length == 0)
         {
             PrintUsage();
-            return Task.FromResult(1);
+            return 1;
         }
 
         try
         {
-            switch (args[0].ToLowerInvariant())
+            return await (args[0].ToLowerInvariant() switch
             {
-                case "devices":
-                    return Task.FromResult(HandleDevices(args));
-                case "firmware":
-                    return Task.FromResult(HandleFirmware(args));
-                case "profiles":
-                    return Task.FromResult(HandleProfiles(args));
-                case "flags":
-                    return Task.FromResult(HandleFlags(args));
-                case "transport":
-                    return HandleTransportAsync(args);
-                case "baseline":
-                    return HandleBaselineAsync(args);
-                case "help":
-                case "--help":
-                case "-h":
-                    PrintUsage();
-                    return Task.FromResult(0);
-                default:
-                    Console.Error.WriteLine($"Unknown command '{args[0]}'.");
-                    PrintUsage();
-                    return Task.FromResult(1);
-            }
+                "devices" => Task.FromResult(HandleDevices(args)),
+                "firmware" => Task.FromResult(HandleFirmware(args)),
+                "profiles" => Task.FromResult(HandleProfiles(args)),
+                "flags" => Task.FromResult(HandleFlags(args)),
+                "transport" => HandleTransportAsync(args),
+                "baseline" => HandleBaselineAsync(args),
+                "verify" => Task.FromResult(HandleVerify(args)),
+                "help" or "--help" or "-h" => Task.FromResult(0),
+                _ => Task.FromException<int>(new InvalidOperationException($"Unknown command '{args[0]}'.")),
+            }).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("Unknown command", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(ex.Message);
+            PrintUsage();
+            return 1;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex.Message);
-            return Task.FromResult(1);
+            return 1;
+        }
+        finally
+        {
+            if (args[0].Equals("help", StringComparison.OrdinalIgnoreCase)
+                || args[0].Equals("--help", StringComparison.OrdinalIgnoreCase)
+                || args[0].Equals("-h", StringComparison.OrdinalIgnoreCase))
+            {
+                PrintUsage();
+            }
         }
     }
 
@@ -201,7 +209,11 @@ internal static class ProgramEntry
         Console.WriteLine("  transport interfaces");
         Console.WriteLine("  transport status");
         Console.WriteLine("  transport probe");
+        Console.WriteLine("  transport trace-probe <output-json>");
+        Console.WriteLine("  transport upload-firmware <path>");
+        Console.WriteLine("  transport scan-color <300|600> <output-ppm> [trace-json]");
         Console.WriteLine("  baseline export [directory]");
+        Console.WriteLine("  verify capture-tools");
     }
 
     private static byte ParseHexByte(string input)
@@ -265,7 +277,8 @@ internal static class ProgramEntry
     {
         if (args.Length < 2)
         {
-            throw new InvalidOperationException("Usage: transport interfaces | transport status | transport probe");
+            throw new InvalidOperationException(
+                "Usage: transport interfaces | transport status | transport probe | transport trace-probe <output-json> | transport upload-firmware <path> | transport scan-color <300|600> <output-ppm> [trace-json]");
         }
 
         var devices = WindowsScanSnapDiscovery.FindSupportedDevices();
@@ -304,7 +317,7 @@ internal static class ProgramEntry
 
                 using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
                 {
-                    await using var transport = WindowsUsbScannerTransport.Open(scanner.InterfacePaths[0]);
+                    await using IScannerTransport transport = WindowsUsbScannerTransport.Open(scanner.InterfacePaths[0]);
                     var session = new S1100SessionEngine();
                     var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
 
@@ -326,7 +339,7 @@ internal static class ProgramEntry
 
                 using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
                 {
-                    await using var transport = WindowsUsbScannerTransport.Open(probeScanner.InterfacePaths[0]);
+                    await using IScannerTransport transport = WindowsUsbScannerTransport.Open(probeScanner.InterfacePaths[0]);
                     var session = new S1100SessionEngine();
                     var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
                     var identifiers = await session.GetIdentifiersAsync(transport, timeout.Token).ConfigureAwait(false);
@@ -341,8 +354,102 @@ internal static class ProgramEntry
 
                 return 0;
 
+            case "trace-probe":
+                if (args.Length < 3)
+                {
+                    throw new InvalidOperationException("Usage: transport trace-probe <output-json>");
+                }
+
+                var tracedScanner = devices.FirstOrDefault(static candidate => candidate.InterfacePaths.Length > 0);
+                if (tracedScanner is null)
+                {
+                    throw new InvalidOperationException("No image-class interface path was discovered for the attached S1100/S1100i device.");
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                {
+                    var trace = new TransportTrace();
+                    await using IScannerTransport transport = new RecordingScannerTransport(
+                        WindowsUsbScannerTransport.Open(tracedScanner.InterfacePaths[0]),
+                        trace);
+
+                    var session = new S1100SessionEngine();
+                    var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
+                    var identifiers = await session.GetIdentifiersAsync(transport, timeout.Token).ConfigureAwait(false);
+                    var sensors = await session.GetSensorFlagsAsync(transport, timeout.Token).ConfigureAwait(false);
+
+                    var tracePath = Path.GetFullPath(args[2]);
+                    await trace.WriteJsonAsync(tracePath, timeout.Token).ConfigureAwait(false);
+
+                    Console.WriteLine($"Device:       {tracedScanner.Name}");
+                    Console.WriteLine($"Interface:    {tracedScanner.InterfacePaths[0]}");
+                    Console.WriteLine($"Status:       {status}");
+                    Console.WriteLine($"Identifiers:  {identifiers.Manufacturer} {identifiers.ProductName}".Trim());
+                    Console.WriteLine($"Sensors:      {sensors}");
+                    Console.WriteLine($"Trace:        {tracePath}");
+                }
+
+                return 0;
+
+            case "upload-firmware":
+                if (args.Length < 3)
+                {
+                    throw new InvalidOperationException("Usage: transport upload-firmware <path>");
+                }
+
+                var firmwareScanner = devices.FirstOrDefault(static candidate => candidate.InterfacePaths.Length > 0);
+                if (firmwareScanner is null)
+                {
+                    throw new InvalidOperationException("No image-class interface path was discovered for the attached S1100/S1100i device.");
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                {
+                    var firmware = NalFirmwareImage.FromFile(args[2]);
+                    await using IScannerTransport transport = WindowsUsbScannerTransport.Open(firmwareScanner.InterfacePaths[0]);
+                    var session = new S1100SessionEngine();
+                    await session.UploadFirmwareAsync(transport, firmware, timeout.Token).ConfigureAwait(false);
+                    var status = await session.GetStatusAsync(transport, timeout.Token).ConfigureAwait(false);
+
+                    Console.WriteLine($"Device:       {firmwareScanner.Name}");
+                    Console.WriteLine($"Interface:    {firmwareScanner.InterfacePaths[0]}");
+                    Console.WriteLine($"Firmware:     {Path.GetFullPath(args[2])}");
+                    Console.WriteLine($"Status:       {status}");
+                }
+
+                return 0;
+
+            case "scan-color":
+                if (args.Length < 4 || !int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var scanDpi))
+                {
+                    throw new InvalidOperationException("Usage: transport scan-color <300|600> <output-ppm> [trace-json]");
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                {
+                    var capture = await WindowsScanSnapImageCapture.ScanToPpmAsync(
+                            scanDpi,
+                            args[3],
+                            args.Length >= 5 ? args[4] : null,
+                            timeout.Token)
+                        .ConfigureAwait(false);
+
+                    Console.WriteLine($"Device:       {capture.DeviceName}");
+                    Console.WriteLine($"Interface:    {capture.InterfacePath}");
+                    Console.WriteLine($"Output:       {capture.OutputPath}");
+                    Console.WriteLine($"Dimensions:   {capture.WidthPixels} x {capture.HeightPixels}");
+                    Console.WriteLine($"DPI:          {capture.Dpi}");
+                    if (!string.IsNullOrWhiteSpace(capture.TracePath))
+                    {
+                        Console.WriteLine($"Trace:        {capture.TracePath}");
+                    }
+                }
+
+                return 0;
+
             default:
-                throw new InvalidOperationException("Usage: transport interfaces | transport status | transport probe");
+                throw new InvalidOperationException(
+                    "Usage: transport interfaces | transport status | transport probe | transport trace-probe <output-json> | transport upload-firmware <path> | transport scan-color <300|600> <output-ppm> [trace-json]");
         }
     }
 
@@ -363,6 +470,30 @@ internal static class ProgramEntry
         Console.WriteLine($"Probe:        {(result.TransportProbeSucceeded ? "succeeded" : "failed")}");
         Console.WriteLine($"Probe detail: {result.TransportProbeSummary ?? "(none)"}");
         return 0;
+    }
+
+    private static int HandleVerify(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            throw new InvalidOperationException("Usage: verify capture-tools");
+        }
+
+        switch (args[1].ToLowerInvariant())
+        {
+            case "capture-tools":
+                foreach (var tool in CaptureToolDiscovery.Inspect())
+                {
+                    Console.WriteLine(tool.Name);
+                    Console.WriteLine($"  Available: {tool.Available}");
+                    Console.WriteLine($"  Path:      {tool.Path ?? "(not found)"}");
+                }
+
+                return 0;
+
+            default:
+                throw new InvalidOperationException("Usage: verify capture-tools");
+        }
     }
 
     private static void PrintLabeledValues(string label, string[] values)

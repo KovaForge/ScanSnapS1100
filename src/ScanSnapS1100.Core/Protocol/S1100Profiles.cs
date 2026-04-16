@@ -10,6 +10,10 @@ public static class S1100Profiles
 
     public static S1100Profile At300Dpi { get; } = new(
         300,
+        8912,
+        3160,
+        2592,
+        58,
         CoarseCalibrationData,
         [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x01, 0x2C, 0x01, 0x2C, 0x00, 0x00,
@@ -44,6 +48,10 @@ public static class S1100Profiles
 
     public static S1100Profile At600Dpi { get; } = new(
         600,
+        15904,
+        5360,
+        5184,
+        32,
         CoarseCalibrationData,
         [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x02, 0x58, 0x02, 0x58, 0x00, 0x00,
