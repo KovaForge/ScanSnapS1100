@@ -21,6 +21,7 @@ public sealed class S1100SessionInitializationTests
             [0x06], // lamp payload ack
             [0x06], // d1 ack
             [0x06], // scan window payload ack
+            [0x50, 0x50, 0x00, 0x00], // ghs payload
             [0x06], // d4 ack
             [0x06], // ingest payload ack
             [0x06], // d6 ack
@@ -39,6 +40,7 @@ public sealed class S1100SessionInitializationTests
         Assert.Contains("1BC6", transport.Writes);
         Assert.Contains("1BC5", transport.Writes);
         Assert.Contains("1BD0", transport.Writes);
+        Assert.Contains("1B33", transport.Writes);
         Assert.Contains(profile.CoarseCalibrationData, transport.WrittenPayloads, ByteArrayComparer.Instance);
         Assert.Contains(BuildExpectedIdentityLut(), transport.WrittenPayloads, ByteArrayComparer.Instance);
     }
