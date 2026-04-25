@@ -86,6 +86,15 @@ public sealed class S1100SessionEngine
         await ExpectSingleByteAsync(transport, Ack, cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask SendIdentityLutAsync(
+        IScannerTransport transport,
+        CancellationToken cancellationToken = default)
+    {
+        await ExpectAckAsync(transport, EpjitsuCommandCode.SetLut, cancellationToken).ConfigureAwait(false);
+        await transport.WriteAsync(BuildIdentityLutPayload(), cancellationToken).ConfigureAwait(false);
+        await ExpectSingleByteAsync(transport, Ack, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask SetWindowAsync(
         IScannerTransport transport,
         ReadOnlyMemory<byte> payload,
@@ -209,5 +218,20 @@ public sealed class S1100SessionEngine
         }
 
         return buffer;
+    }
+
+    private static byte[] BuildIdentityLutPayload()
+    {
+        const int tableEntries = 256;
+        var payload = new byte[tableEntries * 2];
+
+        for (var value = 0; value < tableEntries; value++)
+        {
+            var offset = value * 2;
+            payload[offset] = 0x00;
+            payload[offset + 1] = (byte)value;
+        }
+
+        return payload;
     }
 }

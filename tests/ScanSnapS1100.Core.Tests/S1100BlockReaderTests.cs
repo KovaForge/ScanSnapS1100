@@ -28,8 +28,32 @@ public sealed class S1100BlockReaderTests
 
         var payload = await S1100BlockReader.ReadAsync(transport, profile, requestedLines: 2);
 
-        Assert.Equal(6, payload.Length);
-        Assert.Equal(shortFinalRead[..6], payload);
+        Assert.Equal(12, payload.Length);
+        Assert.Equal(shortFinalRead[..12], payload);
+    }
+
+    [Fact]
+    public async Task ReadAsyncAcceptsPayloadWithoutTrailer()
+    {
+        var profile = CreateTestProfile();
+        byte[] payloadOnly = [0x30, 0x31, 0x32, 0x33, 0x34, 0x35];
+        var transport = new ChunkedScannerTransport(payloadOnly);
+
+        var payload = await S1100BlockReader.ReadAsync(transport, profile, requestedLines: 2);
+
+        Assert.Equal(payloadOnly, payload);
+    }
+
+    [Fact]
+    public async Task ReadAsyncAcceptsAPartialTrailerAfterAFullPayload()
+    {
+        var profile = CreateTestProfile();
+        byte[] payloadWithPartialTrailer = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0xF0];
+        var transport = new ChunkedScannerTransport(payloadWithPartialTrailer);
+
+        var payload = await S1100BlockReader.ReadAsync(transport, profile, requestedLines: 2);
+
+        Assert.Equal(payloadWithPartialTrailer[..12], payload);
     }
 
     private static S1100Profile CreateTestProfile()

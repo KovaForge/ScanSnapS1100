@@ -7,6 +7,7 @@ internal static class S1100BlockReader
 {
     private const int BlockTrailerBytes = 8;
     private const int MaxReadChunk = 64 * 1024;
+    private static readonly TimeSpan ReadIdleTimeout = TimeSpan.FromMilliseconds(750);
 
     public static async ValueTask<byte[]> ReadAsync(
         IScannerTransport transport,
@@ -25,20 +26,25 @@ internal static class S1100BlockReader
         while (totalRead < totalBytesToRead)
         {
             var readSize = Math.Min(MaxReadChunk, totalBytesToRead - totalRead);
-            var bytesRead = await transport.ReadAsync(buffer.AsMemory(totalRead, readSize), cancellationToken).ConfigureAwait(false);
+            using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            readTimeout.CancelAfter(ReadIdleTimeout);
+
+            int bytesRead;
+            try
+            {
+                bytesRead = await transport.ReadAsync(buffer.AsMemory(totalRead, readSize), readTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
             if (bytesRead <= 0)
             {
                 break;
             }
 
             totalRead += bytesRead;
-
-            // The scanner can terminate the final block with a short read that already includes the 8-byte trailer.
-            // Treat that as the end of the block instead of waiting for bytes that will never arrive.
-            if (bytesRead < readSize)
-            {
-                break;
-            }
         }
 
         if (totalRead <= 0)
@@ -46,15 +52,31 @@ internal static class S1100BlockReader
             return [];
         }
 
-        if (totalRead < BlockTrailerBytes)
+        int payloadBytes;
+        if (totalRead >= totalBytesToRead)
+        {
+            payloadBytes = rawBytes;
+        }
+        else if (totalRead > rawBytes)
+        {
+            // Accept a partial trailer after the full payload arrives.
+            payloadBytes = rawBytes;
+        }
+        else if (totalRead >= BlockTrailerBytes && (totalRead - BlockTrailerBytes) % profile.LineStride == 0)
+        {
+            // Short final block with a complete trailer.
+            payloadBytes = totalRead - BlockTrailerBytes;
+        }
+        else if (totalRead % profile.LineStride == 0)
+        {
+            // Some Windows usbscan reads appear to stop after the payload without delivering the trailer.
+            payloadBytes = totalRead;
+        }
+        else
         {
             throw new EndOfStreamException(
-                $"Expected at least {BlockTrailerBytes} bytes from the scanner block trailer, received {totalRead}.");
+                $"Scanner block ended with {totalRead} bytes, which does not align to payload stride {profile.LineStride} or payload-plus-trailer framing.");
         }
-
-        var payloadBytes = totalRead >= totalBytesToRead
-            ? totalRead - BlockTrailerBytes
-            : totalRead - BlockTrailerBytes;
 
         if (payloadBytes > rawBytes)
         {
