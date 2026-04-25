@@ -11,6 +11,7 @@ public sealed class S1100SessionInitializationTests
     {
         var profile = S1100Profiles.At300Dpi;
         var transport = new ScriptedTransport(
+            [0x50, 0x50, 0x00, 0x00], // ghs payload
             [0x06], // d1 ack
             [0x06], // coarse window payload ack
             [0x06], // c6 ack
@@ -21,7 +22,6 @@ public sealed class S1100SessionInitializationTests
             [0x06], // lamp payload ack
             [0x06], // d1 ack
             [0x06], // scan window payload ack
-            [0x50, 0x50, 0x00, 0x00], // ghs payload
             [0x06], // d4 ack
             [0x06], // ingest payload ack
             [0x06], // d6 ack
