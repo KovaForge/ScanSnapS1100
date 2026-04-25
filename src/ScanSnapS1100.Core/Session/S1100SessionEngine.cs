@@ -128,6 +128,27 @@ public sealed class S1100SessionEngine
         await ExpectSingleByteAsync(transport, Ack, cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask SendFixedFineCalibrationAsync(
+        IScannerTransport transport,
+        S1100Profile profile,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = BuildFixedFineCalibrationPayload(profile);
+        await SetWindowAsync(transport, profile.SetWindowSendCalibration, cancellationToken).ConfigureAwait(false);
+        await SetFineCalibrationAsync(
+            transport,
+            EpjitsuCommandCode.SetFineCalibration1,
+            profile.SendCalibrationHeader1,
+            payload,
+            cancellationToken).ConfigureAwait(false);
+        await SetFineCalibrationAsync(
+            transport,
+            EpjitsuCommandCode.SetFineCalibration2,
+            profile.SendCalibrationHeader2,
+            payload,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask PositionPaperAsync(
         IScannerTransport transport,
         bool ingest,
@@ -233,5 +254,28 @@ public sealed class S1100SessionEngine
         }
 
         return payload;
+    }
+
+    internal static byte[] BuildFixedFineCalibrationPayload(S1100Profile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        var payload = new byte[checked(profile.LineStride * 2)];
+        var calibrationPlaneStride = checked(profile.PlaneStride * 2);
+
+        for (var column = 0; column < profile.PlaneWidth; column++)
+        {
+            WriteCalibrationPair(payload, column * 2);
+            WriteCalibrationPair(payload, calibrationPlaneStride + (column * 2));
+            WriteCalibrationPair(payload, (2 * calibrationPlaneStride) + (column * 2));
+        }
+
+        return payload;
+    }
+
+    private static void WriteCalibrationPair(byte[] payload, int offset)
+    {
+        payload[offset] = 0x00;
+        payload[offset + 1] = 0xFF;
     }
 }

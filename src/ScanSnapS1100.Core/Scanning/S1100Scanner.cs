@@ -31,6 +31,7 @@ public sealed class S1100Scanner
         _ = await _session.GetSensorFlagsAsync(transport, cancellationToken).ConfigureAwait(false);
         await _session.SetWindowAsync(transport, profile.SetWindowCoarseCalibration, cancellationToken).ConfigureAwait(false);
         await _session.SetCoarseCalibrationAsync(transport, profile.CoarseCalibrationData, cancellationToken).ConfigureAwait(false);
+        await _session.SendFixedFineCalibrationAsync(transport, profile, cancellationToken).ConfigureAwait(false);
         await _session.SendIdentityLutAsync(transport, cancellationToken).ConfigureAwait(false);
         await _session.SetLampAsync(transport, enabled: true, cancellationToken).ConfigureAwait(false);
         await _session.SetWindowAsync(transport, profile.SetWindowScan, cancellationToken).ConfigureAwait(false);

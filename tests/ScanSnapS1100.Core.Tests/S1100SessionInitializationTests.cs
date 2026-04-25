@@ -16,6 +16,12 @@ public sealed class S1100SessionInitializationTests
             [0x06], // coarse window payload ack
             [0x06], // c6 ack
             [0x06], // coarse payload ack
+            [0x06], // send-cal window command ack
+            [0x06], // send-cal window payload ack
+            [0x06], // c3 ack
+            [0x06], // c3 payload ack
+            [0x06], // c4 ack
+            [0x06], // c4 payload ack
             [0x06], // c5 ack
             [0x06], // lut payload ack
             [0x06], // d0 ack
@@ -38,10 +44,13 @@ public sealed class S1100SessionInitializationTests
             await scanner.ScanColorAsync(transport, new S1100ScanSettings(300)));
 
         Assert.Contains("1BC6", transport.Writes);
+        Assert.Contains("1BC3", transport.Writes);
+        Assert.Contains("1BC4", transport.Writes);
         Assert.Contains("1BC5", transport.Writes);
         Assert.Contains("1BD0", transport.Writes);
         Assert.Contains("1B33", transport.Writes);
         Assert.Contains(profile.CoarseCalibrationData, transport.WrittenPayloads, ByteArrayComparer.Instance);
+        Assert.Contains(S1100SessionEngine.BuildFixedFineCalibrationPayload(profile), transport.WrittenPayloads, ByteArrayComparer.Instance);
         Assert.Contains(BuildExpectedIdentityLut(), transport.WrittenPayloads, ByteArrayComparer.Instance);
     }
 
